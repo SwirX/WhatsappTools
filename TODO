@@ -1,0 +1,14 @@
+- merge messages
+- merge call logs
+- add pharaoh1's decryping script into the program
+- find a way to get the key from the pc (for the users that don't have root access)
+- ignore duplicates
+- rework the system
+- make a simple commandline program
+- clean the code
+- publish to github
+- make a fancy cmdline program
+- make a gui version
+- add message visualisation
+- add contacts selection
+- add group seelection (still haven't seen if it's possible)

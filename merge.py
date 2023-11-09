@@ -2,7 +2,6 @@ import os
 from os.path import isfile, abspath, exists, isdir, samefile
 from sys import argv
 import sqlite3
-import re
 
 def create_database(data:str="", name:str="merged")->[bool, str]:
     status = False

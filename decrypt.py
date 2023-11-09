@@ -9,7 +9,6 @@ import sys
 import zlib
 from io import DEFAULT_BUFFER_SIZE
 
-
 __author__ = 'TripCode, ElDavo'
 __copyright__ = 'Copyright (C) 2022'
 __license__ = 'GPLv3'

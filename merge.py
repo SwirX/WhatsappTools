@@ -71,13 +71,16 @@ try:
         exit(0)
     merged_database_connection = sqlite3.connect(path)
     merged_database_cursor = merged_database_connection.cursor()
+
     # make the database
+    # message table
     merged_database_cursor.execute(
         "CREATE TABLE message (_id INTEGER PRIMARY KEY AUTOINCREMENT, chat_row_id INTEGER NOT NULL, from_me INTEGER "
         "NOT NULL, key_id TEXT NOT NULL, sender_jid_row_id INTEGER, status INTEGER, broadcast INTEGER, "
         "recipient_count INTEGER, participant_hash TEXT, origination_flags INTEGER, origin INTEGER, timestamp "
         "INTEGER, received_timestamp INTEGER, receipt_server_timestamp INTEGER, message_type INTEGER, text_data TEXT, "
         "starred INTEGER, lookup_tables INTEGER, message_add_on_flags INTEGER, sort_id INTEGER NOT NULL DEFAULT 0 )")
+    # call_logs
     print("transferring the old msg list")
     old_messages_key_ids = []
     for m in old_db_msgs_list:  # m : messages
@@ -128,9 +131,6 @@ try:
 
     # merging the call logs
 
-    old_db_call_logs_list = [a for a in old_database_cursor.execute("SELECT * FROM call_logs")]
-    new_db_call_logs_list = [a for a in new_database_cursor.execute("SELECT * FROM call_logs")]
-
     merged_database_cursor.execute("CREATE TABLE call_log(_id INTEGER PRIMARY KEY AUTOINCREMENT,jid_row_id INTEGER,"
                                    "from_me INTEGER,call_id TEXT,transaction_id INTEGER,timestamp INTEGER,video_call "
                                    "INTEGER,duration INTEGER,call_result INTEGER,is_dnd_mode_on INTEGER,"
@@ -139,9 +139,12 @@ try:
                                    "DEFAULT 0,call_random_id TEXT,call_link_row_id INTEGER NOT NULL DEFAULT 0,"
                                    "call_type INTEGER,offer_silence_reason INTEGER,scheduled_id TEXT)")
 
+    old_db_call_logs_list = [a for a in old_database_cursor.execute("SELECT * FROM call_log")]
+    new_db_call_logs_list = [a for a in new_database_cursor.execute("SELECT * FROM call_log")]
+
     calls_id = []
     last_call_id = int(old_database_connection.execute
-                       ("SELECT * FROM call_logs ORDER BY _id DESC LIMIT 1").fetchone()[0])
+                       ("SELECT * FROM call_log ORDER BY _id DESC LIMIT 1").fetchone()[0])
     calls_log_sql = "INSERT INTO call_logs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?"
     for cl in old_db_call_logs_list:
         params = (
@@ -162,6 +165,50 @@ try:
         )
         merged_database_cursor.execute(calls_log_sql, params)
         print("inserted")
+    print("call_logs merge complete")
+
+    # merge chat_view
+
+    old_db_chat_view = old_database_cursor.execute("SELECT * chat_view ORDER BY sort_timestamp DESC")
+    new_db_chat_view = new_database_cursor.execute("SELECT * chat_view ORDER BY sort_timestamp DESC")
+
+    chat_view = []
+    chat_sql = ("INSERT INTO chat_view VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
+                "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?")
+    last_chat_view_id = int(old_database_connection.execute
+                            ("SELECT * FROM chat_view ORDER BY _id DESC LIMIT 1").fetchone()[0])
+    for c in new_db_chat_view:
+        chat = [c[1], c[11]]
+        params = (
+            c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7], c[8], c[9],
+            c[10], c[11], c[12], c[13], c[14], c[15], c[16], c[17], c[18], c[19],
+            c[20], c[21], c[22], c[23], c[24], c[25], c[26], c[27], c[28], c[29],
+            c[30], c[31], c[32], c[33], c[34], c[35], c[36], c[37], c[38], c[39],
+            c[40], c[41], c[42]
+        )
+        merged_database_cursor.execute(chat_sql, params)
+        chat_view.append(chat)
+        print("inserted")
+    for c in old_db_chat_view:
+        f = False
+        for chat in chat_view:
+            if c[1] in chat:
+                if c[11] < chat[1]:
+                    print("the chat is old skipping...")
+                    continue
+        if f:
+            continue
+        new_id = last_chat_view_id + int(c[0])
+        params = (
+            new_id, c[1], c[2], c[3], c[4], c[5], c[6], c[7], c[8], c[9],
+            c[10], c[11], c[12], c[13], c[14], c[15], c[16], c[17], c[18], c[19],
+            c[20], c[21], c[22], c[23], c[24], c[25], c[26], c[27], c[28], c[29],
+            c[30], c[31], c[32], c[33], c[34], c[35], c[36], c[37], c[38], c[39],
+            c[40], c[41], c[42]
+        )
+        merged_database_cursor.execute(chat_sql, params)
+        print("inserted")
+    print("chat_view merge complete")
 
     merged_database_connection.commit()
     merged_database_connection.close()

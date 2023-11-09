@@ -1,13 +1,13 @@
 # just a bare-bones script to generate some parts of the code cuz it's tedious, and I'm lazy
 
-m = ""
+m = ""  # mode empty creates the sql command to insert the values if not writes the params
 
-t = "message_ephemeral"
+t = "message_ephemeral"  # the table name
 
-n = "e"
-c = 4
+n = "e"  # the looping variable name
+c = 4  # values count
 
-o = ""
+o = ""  # output file
 
 if m != "":
     for i in range(0, c):

@@ -29,6 +29,10 @@ try:
     if samefile(old_database_file, new_database_file):
         print("the passed files are the same")
         exit(1)
+    #check if the passed files are a database file (.db)
+    if not old_database_file.endswith(".db") and not new_database_file.endswith(".db"):
+        print("the passed files are not a database file (ends with .db)\nRecheck the files and retry")
+        exit(0)
     # check if the user has passed a custom output directory
     outputDir = "./output"
     try:
@@ -47,8 +51,8 @@ try:
     old_database_cursor = old_database_connection.cursor()
     new_database_cursor = new_database_connection.cursor()
     # get all the tables
-    old_db_table_list = [a for a in old_database_cursor.execute("SELECT name FROM sqlite_master WHERE type = 'table'")]
-    new_db_table_list = [a for a in new_database_cursor.execute("SELECT name FROM sqlite_master WHERE type = 'table'")]
+    # old_db_table_list = [a for a in old_database_cursor.execute("SELECT name FROM sqlite_master WHERE type = 'table'")]
+    # new_db_table_list = [a for a in new_database_cursor.execute("SELECT name FROM sqlite_master WHERE type = 'table'")]
     # messages
     old_db_msgs_list = [a for a in old_database_cursor.execute("SELECT * FROM message")]
     print("a")
@@ -67,6 +71,7 @@ try:
     # make the database
     merged_database_cursor.execute("CREATE TABLE message (_id INTEGER PRIMARY KEY AUTOINCREMENT, chat_row_id INTEGER NOT NULL, from_me INTEGER NOT NULL, key_id TEXT NOT NULL, sender_jid_row_id INTEGER, status INTEGER, broadcast INTEGER, recipient_count INTEGER, participant_hash TEXT, origination_flags INTEGER, origin INTEGER, timestamp INTEGER, received_timestamp INTEGER, receipt_server_timestamp INTEGER, message_type INTEGER, text_data TEXT, starred INTEGER, lookup_tables INTEGER, message_add_on_flags INTEGER, sort_id INTEGER NOT NULL DEFAULT 0 )")
     print("transfering the old msg list")
+    old_messages_key_ids = []
     for m in old_db_msgs_list: # m : messages
         v = []
         for i in range(20):
@@ -85,10 +90,14 @@ try:
         sql = "INSERT INTO message VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         # sql = re.subn("(\'None\')", "NULL", sql)
         merged_database_cursor.execute(sql, params)
+        old_messages_key_ids.append(m[3])
         print("inserted")
         print("\n\n")
     print("merging the second messages table with the old one")
     for m in new_db_msgs_list:
+        if m[3] in old_messages_key_ids:
+            print("duplicate message skipping...")
+            continue
         newid = int(m[0]) + old_msgs_len
         v = []
         for i in range(20):
@@ -109,6 +118,11 @@ try:
         merged_database_cursor.execute(sql, params)
         print("inserted")
         print("\n\n")
+
+    print("merged the messages")
+
+    # merging the call logs
+
     
     merged_database_connection.commit()
     merged_database_connection.close()

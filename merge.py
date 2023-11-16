@@ -4,37 +4,49 @@ from sys import argv
 import sqlite3
 
 
-def create_database(data: str = "", name: str = "merged") -> [bool, str]:
+def create_database(olddb, name: str = "merged") -> [bool, str]:
     _status = False
     try:
-        with open(f"{name}.db", "w+") as db:
-            if data != "":
-                db.write(data)
-            _status = True
-        return _status, abspath(f"{name}.db")
-    except IOError as _e:
-        print(_e)
-        return _status, ""
+        with open(f'{abspath(olddb)}', 'rb') as old_db:
+            db_bytes = old_db.read()
+            with open("merged.db", "wb+") as merged_db:
+                merged_db.write(db_bytes)
+        _status = True
+    except Exception as exception:
+        print("an error has occurred")
+        print(exception)
+
+    return _status, abspath("merged.db")
+
+
+
+def create_insert_command(table_name, entries_count):
+    print(f"INSERT INTO {table_name} VALUES (" + ("?, " * (entries_count - 1)) + "?);")
+    return f"INSERT INTO {table_name} VALUES (" + ("?, " * (entries_count - 1)) + "?);"
+
+
+def validate_arguments(first_file, second_file):
+    if not isfile(first_file) and not isfile(second_file):
+        print("the passed paths are not files")
+        exit(1)
+    # check if the passed files are the same file or not
+    if samefile(first_file, second_file):
+        print("the passed files are the same")
+        exit(1)
+    # check if the passed files are a database file (.db)
+    if not first_file.endswith(".db") and not second_file.endswith(".db"):
+        if first_file.endswith(".crypt14") and second_file.endswith(".crypt14"):
+            print("Still not implemented")
+            exit(1)
+        print("the passed files are not a database file (ends with .db)\nRecheck the files and retry")
+        exit(1)
 
 
 try:
     old_database_file = argv[1].replace("\\", "/")
     new_database_file = argv[2].replace("\\", "/")
-    print(old_database_file)
-    print(new_database_file)
-    # check if the passed arguments are files
-    if not isfile(old_database_file) and not isfile(new_database_file):
-        print("the passed paths are not files")
-        exit(1)
-    # check if the passed files are the same file or not
-    if samefile(old_database_file, new_database_file):
-        print("the passed files are the same")
-        exit(1)
-    # check if the passed files are a database file (.db)
-    if not old_database_file.endswith(".db") and not new_database_file.endswith(".db"):
-        print("the passed files are not a database file (ends with .db)\nRecheck the files and retry")
-        exit(0)
-    # check if the user has passed a custom output directory
+    validate_arguments(old_database_file, new_database_file)
+
     outputDir = "./output"
     try:
         if argv[3] is not None:
@@ -45,362 +57,239 @@ try:
     # check if the directory exists if not create one
     if not exists(outputDir):
         os.system(f"mkdir {outputDir}")
-    # create a connection to the databases
+
     old_database_connection = sqlite3.connect(old_database_file)
     new_database_connection = sqlite3.connect(new_database_file)
-    # get the cursors
     old_database_cursor = old_database_connection.cursor()
     new_database_cursor = new_database_connection.cursor()
-    # get all the tables
-    # old_db_table_list = [a for a in old_database_cursor.execute
-    # ("SELECT name FROM sqlite_master WHERE type = 'table'")]
-    # new_db_table_list = [a for a in new_database_cursor.execute
-    # ("SELECT name FROM sqlite_master WHERE type = 'table'")]
-    # messages
-    old_db_msgs_list = [a for a in old_database_cursor.execute("SELECT * FROM message")]
-    print("a")
-    msgs_last_id = old_database_connection.execute("SELECT * FROM message ORDER BY _id DESC LIMIT 1").fetchone()[0]
-    # old_database_cursor.execute("SELECT * FROM message ORDER BY _id DESC LIMIT 1")
-    old_msgs_len = int(msgs_last_id)
-    print(f"old messages length = {old_msgs_len}")
-    new_db_msgs_list = [a for a in new_database_cursor.execute("SELECT * FROM message")]
-    # create the new merged database
-    status, path = create_database()
+
+    l = [a for a in old_database_cursor.execute
+    ("SELECT name FROM sqlite_master WHERE type = 'trigger'")]
+
+    # these values have been hardcoded here so that we don't unnecessarily recompute them (might change it later)
+    tables = {'props', 'conversion_tuples', 'labeled_messages_fts_content',
+              'labeled_messages_fts_segments', 'labeled_messages_fts_segdir', 'message_vcard_jid',
+              'receipt_orphaned', 'message_add_on_receipt_device', 'message_quoted_group_invite_legacy',
+              'message', 'group_participant_user', 'message_system_value_change', 'newsletter', 'jid',
+              'message_quoted_media', 'payment_background_order', 'primary_device_version',
+              'message_ui_elements_reply', 'message_external_ad_content', 'away_messages', 'jid_map',
+              'message_quoted_mentions', 'message_quoted_blank_reply', 'message_system',
+              'message_system_business_state', 'messages_quotes', 'message_system_linked_group_call',
+              'status_list', 'quick_replies', 'message_payment_status_update', 'group_notification_version',
+              'mms_thumbnail_metadata', 'audio_data', 'joinable_call_log', 'message_ephemeral',
+              'message_system_payment_invite_setup', 'media_refs', 'message_system_device_change',
+              'integrator_display_name', 'message_view_once_media', 'scheduled_calls', 'labels',
+              'message_quoted_product', 'messages_hydrated_four_row_template', 'message_text', 'priority_inbox',
+              'quick_reply_attachments', 'message_quoted_payment_invite', 'message_details',
+              'message_add_on_keep_in_chat', 'status', 'message_scheduled_call',
+              'message_system_with_group_nodes', 'group_participant_device',
+              'message_system_initial_privacy_provider', 'pay_transaction', 'group_past_participant_user',
+              'receipt_user', 'message_add_on_pin_in_chat', 'message_add_on_reaction',
+              'parent_group_participants', 'message_quoted_order', 'message_broadcast_ephemeral',
+              'message_thumbnail', 'message_product', 'message_ephemeral_sync_response',
+              'message_system_scheduled_call_start', 'message_thumbnails', 'message_poll_option',
+              'payment_background', 'call_log', 'message_forwarded', 'smart_suggestions_key_value',
+              'message_quoted_text', 'message_system_sibling_group_link_change', 'message_quoted',
+              'message_system_number_change', 'message_link', 'message_privacy_state',
+              'message_system_ephemeral_setting_not_applied', 'receipt_device',
+              'message_media_interactive_annotation_vertex', 'message_order',
+              'message_media_interactive_annotation', 'chat', 'message_system_block_contact',
+              'message_group_invite', 'message_ui_elements', 'keywords', 'labeled_messages', 'user_device_info',
+              'group_participants_history', 'message_revoked', 'message_vcard', 'message_streaming_sidecar',
+              'message_quoted_ui_elements', 'message_add_on_poll_vote', 'message_quoted_ui_elements_reply_legacy',
+              'call_link', 'message_secret', 'message_poll', 'message_quoted_location', 'played_self_receipt',
+              'message_system_photo_change', 'message_template_quoted', 'message_template', 'labeled_jids',
+              'newsletter_linked_account', 'missed_call_logs', 'suggest_as_you_type', 'lid_display_name',
+              'message_system_chat_assignment', 'message_send_count', 'message_orphaned_edit', 'lid_chat_state',
+              'backup_changes', 'frequents', 'status_crossposting', 'message_rating', 'message_payment',
+              'message_add_on_poll_vote_selected_option', 'message_ephemeral_setting', 'message_system_group',
+              'message_quoted_ui_elements_reply', 'message_template_button', 'message_location',
+              'message_status_psa_campaign', 'frequent', 'message_add_on_orphan', 'media_hash_thumbnail',
+              'agent_message_attribution', 'template_messages_metadata', 'community_chat',
+              'missed_call_log_participant', 'message_media_vcard_count', 'agent_devices', 'quick_reply_usage',
+              'message_quoted_vcard', 'labeled_jid', 'message_invoice', 'message_mentions',
+              'quick_reply_keywords', 'message_system_group_with_parent',
+              'message_payment_transaction_reminder', 'newsletter_message', 'invoice_transactions',
+              'message_edit_info', 'group_participants', 'message_quote_invoice', 'agent_chat_assignment',
+              'message_media', 'user_device', 'receipts', 'deleted_chat_job', 'suggested_replies',
+              'message_system_chat_participant', 'message_system_community_link_changed',
+              'message_payment_invite', 'call_log_participant_v2', 'message_add_on', 'message_future',
+              'message_quoted_group_invite', 'android_metadata', 'labeled_messages_fts'}
+    views = {'message_view', 'available_message_view', 'deleted_messages_view', 'deleted_messages_ids_view',
+             'chat_view'}
+    triggers = {'call_log_bd_for_call_log_participant_v2_trigger', 'call_log_bd_for_joinable_call_log_trigger',
+                'chat_bd_for_community_chat_trigger', 'chat_bd_for_message_add_on_orphan_trigger',
+                'chat_bd_for_message_link_trigger', 'chat_bd_for_newsletter_linked_account_trigger',
+                'chat_bd_for_newsletter_trigger', 'group_participant_user_bd_for_group_participant_device_trigger',
+                'labels_bd_for_labeled_jid_trigger', 'labels_bd_for_labeled_jids_trigger',
+                'labels_bd_for_labeled_messages_trigger', 'message_add_on_bd_for_message_add_on_keep_in_chat_trigger',
+                'message_add_on_bd_for_message_add_on_pin_in_chat_trigger',
+                'message_add_on_bd_for_message_add_on_poll_vote_selected_option_trigger',
+                'message_add_on_bd_for_message_add_on_poll_vote_trigger',
+                'message_add_on_bd_for_message_add_on_reaction_trigger',
+                'message_add_on_bd_for_message_add_on_receipt_device_trigger',
+                'message_bd_for_agent_message_attribution_trigger', 'message_bd_for_audio_data_trigger',
+                'message_bd_for_labeled_messages_fts_trigger', 'message_bd_for_labeled_messages_trigger',
+                'message_bd_for_message_add_on_trigger', 'message_bd_for_message_broadcast_ephemeral_trigger',
+                'message_bd_for_message_details_trigger', 'message_bd_for_message_edit_info_trigger',
+                'message_bd_for_message_ephemeral_setting_trigger', 'message_bd_for_message_ephemeral_trigger',
+                'message_bd_for_message_external_ad_content_trigger', 'message_bd_for_message_forwarded_trigger',
+                'message_bd_for_message_ftsv2_trigger', 'message_bd_for_message_future_trigger',
+                'message_bd_for_message_group_invite_trigger', 'message_bd_for_message_link_trigger',
+                'message_bd_for_message_location_trigger', 'message_bd_for_message_media_trigger',
+                'message_bd_for_message_mentions_trigger', 'message_bd_for_message_order_trigger',
+                'message_bd_for_message_payment_invite_trigger', 'message_bd_for_message_poll_trigger',
+                'message_bd_for_message_privacy_state_trigger', 'message_bd_for_message_product_trigger',
+                'message_bd_for_message_quoted_trigger', 'message_bd_for_message_rating_trigger',
+                'message_bd_for_message_revoked_trigger', 'message_bd_for_message_scheduled_call_trigger',
+                'message_bd_for_message_secret_trigger', 'message_bd_for_message_send_count_trigger',
+                'message_bd_for_message_status_psa_campaign_trigger',
+                'message_bd_for_message_streaming_sidecar_trigger', 'message_bd_for_message_system_trigger',
+                'message_bd_for_message_template_trigger', 'message_bd_for_message_text_trigger',
+                'message_bd_for_message_thumbnail_trigger', 'message_bd_for_message_ui_elements_reply_trigger',
+                'message_bd_for_message_ui_elements_trigger', 'message_bd_for_message_vcard_jid_trigger',
+                'message_bd_for_message_vcard_trigger', 'message_bd_for_message_view_once_media_trigger',
+                'message_bd_for_messages_hydrated_four_row_template_trigger', 'message_bd_for_missed_call_logs_trigger',
+                'message_bd_for_mms_thumbnail_metadata_trigger', 'message_bd_for_newsletter_message_trigger',
+                'message_bd_for_played_self_receipt_trigger', 'message_bd_for_receipt_device_trigger',
+                'message_bd_for_receipt_user_trigger', 'message_bd_for_status_crossposting_trigger',
+                'message_bd_for_suggest_as_you_type_trigger', 'message_bd_for_suggested_replies_trigger',
+                'message_media_bd_for_message_media_interactive_annotation_trigger',
+                'message_media_bd_for_message_media_vcard_count_trigger',
+                'message_media_interactive_annotation_bd_for_message_media_interactive_annotation_vertex_trigger',
+                'message_poll_bd_for_message_poll_option_trigger',
+                'message_quoted_bd_for_message_quoted_blank_reply_trigger',
+                'message_quoted_bd_for_message_quoted_group_invite_trigger',
+                'message_quoted_bd_for_message_quoted_location_trigger',
+                'message_quoted_bd_for_message_quoted_media_trigger',
+                'message_quoted_bd_for_message_quoted_mentions_trigger',
+                'message_quoted_bd_for_message_quoted_order_trigger',
+                'message_quoted_bd_for_message_quoted_payment_invite_trigger',
+                'message_quoted_bd_for_message_quoted_product_trigger',
+                'message_quoted_bd_for_message_quoted_text_trigger',
+                'message_quoted_bd_for_message_quoted_ui_elements_reply_trigger',
+                'message_quoted_bd_for_message_quoted_ui_elements_trigger',
+                'message_quoted_bd_for_message_quoted_vcard_trigger',
+                'message_quoted_bd_for_message_template_quoted_trigger',
+                'message_system_bd_for_message_payment_status_update_trigger',
+                'message_system_bd_for_message_payment_transaction_reminder_trigger',
+                'message_system_bd_for_message_payment_trigger',
+                'message_system_bd_for_message_system_block_contact_trigger',
+                'message_system_bd_for_message_system_business_state_trigger',
+                'message_system_bd_for_message_system_chat_assignment_trigger',
+                'message_system_bd_for_message_system_chat_participant_trigger',
+                'message_system_bd_for_message_system_community_link_changed_trigger',
+                'message_system_bd_for_message_system_device_change_trigger',
+                'message_system_bd_for_message_system_ephemeral_setting_not_applied_trigger',
+                'message_system_bd_for_message_system_group_trigger',
+                'message_system_bd_for_message_system_group_with_parent_trigger',
+                'message_system_bd_for_message_system_initial_privacy_provider_trigger',
+                'message_system_bd_for_message_system_linked_group_call_trigger',
+                'message_system_bd_for_message_system_number_change_trigger',
+                'message_system_bd_for_message_system_payment_invite_setup_trigger',
+                'message_system_bd_for_message_system_photo_change_trigger',
+                'message_system_bd_for_message_system_scheduled_call_start_trigger',
+                'message_system_bd_for_message_system_sibling_group_link_change_trigger',
+                'message_system_bd_for_message_system_value_change_trigger',
+                'message_system_bd_for_message_system_with_group_nodes_trigger',
+                'message_template_bd_for_message_template_button_trigger',
+                'message_vcard_bd_for_message_vcard_jid_trigger',
+                'missed_call_logs_bd_for_missed_call_log_participant_trigger',
+                'payment_background_bd_for_payment_background_order_trigger',
+                'quick_replies_bd_for_quick_reply_attachments_trigger',
+                'quick_replies_bd_for_quick_reply_keywords_trigger', 'quick_replies_bd_for_quick_reply_usage_trigger',
+                'suggest_as_you_type_delete_oldest_trigger', 'suggested_replies_delete_oldest_trigger'}
+
+    added_tables = []
+    added_views = []
+    added_triggers = []
+
+    status, path = create_database(old_database_file)
     if not status:
-        print("couldn't create the new merged database")
-        exit(0)
+        print("an error has occurred while creating the merged file")
+        exit(1)
     merged_database_connection = sqlite3.connect(path)
     merged_database_cursor = merged_database_connection.cursor()
 
-    # make the database
-    # message table
-    merged_database_cursor.execute(
-        "CREATE TABLE message (_id INTEGER PRIMARY KEY AUTOINCREMENT, chat_row_id INTEGER NOT NULL, from_me INTEGER "
-        "NOT NULL, key_id TEXT NOT NULL, sender_jid_row_id INTEGER, status INTEGER, broadcast INTEGER, "
-        "recipient_count INTEGER, participant_hash TEXT, origination_flags INTEGER, origin INTEGER, timestamp "
-        "INTEGER, received_timestamp INTEGER, receipt_server_timestamp INTEGER, message_type INTEGER, text_data TEXT, "
-        "starred INTEGER, lookup_tables INTEGER, message_add_on_flags INTEGER, sort_id INTEGER NOT NULL DEFAULT 0 )")
-    # call_log
-    print("transferring the old msg list")
-    old_messages_key_ids = []
-    for m in old_db_msgs_list:  # m : messages
-        v = []
-        for i in range(20):
-            if m[i] is None:
-                v.append("''")
-            else:
-                v.append(f"'{m[i]}'")
-        params = (
-            m[0], m[1], m[2], m[3], m[4],
-            m[5], m[6], m[7], m[8], m[9],
-            m[10], m[11], m[12], m[13],
-            m[14], m[15], m[16], m[17], m[18], m[0]
-        )
-        print(params)
-        sql = "INSERT INTO message VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-        # sql = re.subn("(\'None\')", "NULL", sql)
-        merged_database_cursor.execute(sql, params)
-        old_messages_key_ids.append(m[3])
-        print("inserted")
-        print("\n\n")
-    print("merging the second messages table with the old one")
-    for m in new_db_msgs_list:
-        if m[3] in old_messages_key_ids:
-            print("duplicate message skipping...")
+    for table in tables:
+        if table in added_tables:
             continue
-        new_id = int(m[0]) + old_msgs_len
-        v = []
-        for i in range(20):
-            if m[i] is None:
-                v.append("''")
-            else:
-                v.append(f"'{m[i]}'")
-        params = (
-            new_id, m[1], m[2], m[3], m[4],
-            m[5], m[6], m[7], m[8], m[9], m[10],
-            m[11], m[12], m[13], m[14], m[15],
-            m[16], m[17], m[18], new_id
-        )
-        print(params)
-        sql = "INSERT INTO message VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-        merged_database_cursor.execute(sql, params)
-        print("inserted")
-        print("\n\n")
-
-    print("merged the messages")
-
-    # merging the call logs
-
-    print("making the call_log table")
-
-    merged_database_cursor.execute("CREATE TABLE call_log(_id INTEGER PRIMARY KEY AUTOINCREMENT,jid_row_id INTEGER,"
-                                   "from_me INTEGER,call_id TEXT,transaction_id INTEGER,timestamp INTEGER,video_call "
-                                   "INTEGER,duration INTEGER,call_result INTEGER,is_dnd_mode_on INTEGER,"
-                                   "bytes_transferred INTEGER,group_jid_row_id INTEGER NOT NULL DEFAULT 0,"
-                                   "is_joinable_group_call INTEGER,call_creator_device_jid_row_id INTEGER NOT NULL "
-                                   "DEFAULT 0,call_random_id TEXT,call_link_row_id INTEGER NOT NULL DEFAULT 0,"
-                                   "call_type INTEGER,offer_silence_reason INTEGER,scheduled_id TEXT)")
-
-    print("getting the call logs lists")
-
-    old_db_call_log_list = [a for a in old_database_cursor.execute("SELECT * FROM call_log")]
-    new_db_call_log_list = [a for a in new_database_cursor.execute("SELECT * FROM call_log")]
-
-    calls_id = []
-    last_call_id = int(old_database_connection.execute
-                       ("SELECT * FROM call_log ORDER BY _id DESC LIMIT 1").fetchone()[0])
-    calls_log_sql = "INSERT INTO call_log VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-    print("looping through old call logs")
-    for cl in old_db_call_log_list:
-        params = (
-            cl[0], cl[1], cl[2], cl[3], cl[4], cl[5], cl[6], cl[7], cl[8], cl[9],
-            cl[10], cl[11], cl[12], cl[13], cl[14], cl[15], cl[16], cl[17], cl[18]
-        )
-        print(params)
-        merged_database_cursor.execute(calls_log_sql, params)
-        calls_id.append(cl[3])
-        print("inserted")
-    for cl in new_db_call_log_list:
-        if cl[3] in calls_id:
-            print("skipping duplicates...")
+        skip_merging = table == "android_metadata"
+        print("\n" + table + "\n")
+        old_db_table_entries = [a for a in old_database_cursor.execute(f"SELECT * FROM {table}")]
+        new_db_table_entries = [a for a in new_database_cursor.execute(f"SELECT * FROM {table}")]
+        sql_create_table_function = old_database_cursor.execute(f"SELECT sql FROM sqlite_master WHERE name = '{table}' "
+                                                                "AND type = 'table'").fetchone()[0].replace("FTS3(", "FTS4(")
+        print("create function: ", sql_create_table_function)
+        merged_database_cursor.execute(sql_create_table_function)
+        last_id = int(
+            old_database_connection.execute("SELECT * FROM message ORDER BY _id DESC LIMIT 1").fetchone()[0]) or 0
+        if last_id == 0:
             continue
-        new_id = last_call_id + int(cl[0])
-        params = (
-            new_id, cl[1], cl[2], cl[3], cl[4], cl[5], cl[6], cl[7], cl[8], cl[9],
-            cl[10], cl[11], cl[12], cl[13], cl[14], cl[15], cl[16], cl[17], cl[18]
-        )
-        merged_database_cursor.execute(calls_log_sql, params)
-        print("inserted")
-    print("call_log merge complete")
 
-    # merge the chat table
-    print("creating the chat table")
-    merged_database_cursor.execute("CREATE TABLE chat(_id INTEGER PRIMARY KEY AUTOINCREMENT,jid_row_id INTEGER "
-                                   "UNIQUE,hidden INTEGER,subject TEXT,created_timestamp INTEGER,"
-                                   "display_message_row_id INTEGER,last_message_row_id INTEGER,"
-                                   "last_read_message_row_id INTEGER,last_read_receipt_sent_message_row_id INTEGER,"
-                                   "last_important_message_row_id INTEGER,archived INTEGER,sort_timestamp INTEGER,"
-                                   "mod_tag INTEGER,gen REAL,spam_detection INTEGER,"
-                                   "unseen_earliest_message_received_time INTEGER,unseen_message_count INTEGER,"
-                                   "unseen_missed_calls_count INTEGER,unseen_row_count INTEGER,plaintext_disabled "
-                                   "INTEGER,vcard_ui_dismissed INTEGER,change_number_notified_message_row_id INTEGER,"
-                                   "show_group_description INTEGER,ephemeral_expiration INTEGER,"
-                                   "last_read_ephemeral_message_row_id INTEGER,ephemeral_setting_timestamp INTEGER,"
-                                   "ephemeral_displayed_exemptions INTEGER,ephemeral_disappearing_messages_initiator "
-                                   "INTEGER,unseen_important_message_count INTEGER NOT NULL DEFAULT 0,group_type "
-                                   "INTEGER NOT NULL DEFAULT 0,last_message_reaction_row_id INTEGER,"
-                                   "last_seen_message_reaction_row_id INTEGER,unseen_message_reaction_count INTEGER,"
-                                   "growth_lock_level INTEGER,growth_lock_expiration_ts INTEGER,"
-                                   "last_read_message_sort_id INTEGER,display_message_sort_id INTEGER,"
-                                   "last_message_sort_id INTEGER,last_read_receipt_sent_message_sort_id INTEGER,"
-                                   "has_new_community_admin_dialog_been_acknowledged INTEGER NOT NULL DEFAULT 0,"
-                                   "history_sync_progress INTEGER,chat_lock INTEGER)")
+        merged_entries = []
 
-    print("get the chat lists")
+        for e in old_db_table_entries:
+            merged_entries.append(e)
 
-    old_db_chat_list = [a for a in old_database_cursor.execute("SELECT * FROM chat")]
-    new_db_chat_list = [a for a in new_database_cursor.execute("SELECT * FROM chat")]
+        if not skip_merging:
+            for e in new_db_table_entries:
+                if not e or e is None:
+                    break
+                if e in merged_entries:
+                    print("merged. skipping...")
+                    continue
+                params = ()
+                try:
+                    new_id = last_id + e[0]
+                    params += (new_id,)
+                    if type(e[1]) == int or type(e[1]) == tuple:
+                        try:
+                            params += (new_id,)
+                            for i in range(2, len(e)):
+                                params += (e[i],)
+                        except Exception as ex:
+                            print(ex)
+                    elif type(e[1]) == str:
+                        continue
+                    else:
+                        for i in range(1, len(e)):
+                            params += (e[i],)
+                except Exception as exp:
+                    print(exp)
+                print(params)
+                merged_database_cursor.execute(create_insert_command(table, len(e)), params)
+            added_tables.append(table)
 
-    chat_jids = []
-    chat_sql = ("INSERT INTO chat VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
-                "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);")
-    last_chat_id = int(old_database_connection.execute
-                       ("SELECT * FROM chat ORDER BY _id DESC LIMIT 1").fetchone()[0])
-    for c in old_db_chat_list:
-        params = (
-            c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7], c[8], c[9], c[10], c[11], c[12], c[13], c[14], c[15],
-            c[16], c[17], c[18], c[19], c[20], c[21], c[22], c[23], c[24], c[25], c[26], c[27], c[28], c[29],
-            c[30], c[31], c[32], c[33], c[34], c[35], c[36], c[37], c[38], c[39], c[40], c[41]
-        )
-        merged_database_cursor.execute(chat_sql, params)
-        chat_jids.append(c[1])
-        print("inserted")
-    for c in new_db_chat_list:
-        if c[1] in chat_jids:
-            print("duplicate chat, skipping...")
+        merged_database_connection.commit()
+
+    for view in views:
+        if view in added_views:
             continue
-        new_id = last_chat_id + int(c[0])
-        params = (
-            new_id, c[1], c[2], c[3], c[4], c[5], c[6], c[7], c[8], c[9], c[10], c[11], c[12], c[13], c[14], c[15],
-            c[16], c[17], c[18], c[19], c[20], c[21], c[22], c[23], c[24], c[25], c[26], c[27], c[28], c[29],
-            c[30], c[31], c[32], c[33], c[34], c[35], c[36], c[37], c[38], c[39], c[40], c[41]
-        )
-        merged_database_cursor.execute(chat_sql, params)
-        print("inserted")
-    print("merged the chat table")
+        print("\n" + view + "\n")
+        sql_create_view_function = new_database_cursor.execute(
+            f"SELECT sql FROM sqlite_master WHERE name = '{view}' AND type = 'view'").fetchone()[0]
+        merged_database_cursor.execute(sql_create_view_function)
+        added_views.append(view)
+        merged_database_connection.commit()
 
-    # merge jid
-
-    print("creating the jid table")
-    merged_database_cursor.execute("CREATE TABLE jid(_id INTEGER PRIMARY KEY AUTOINCREMENT,user TEXT NOT NULL,"
-                                   "server TEXT NOT NULL,agent INTEGER,device INTEGER,type INTEGER,raw_string TEXT)")
-
-    print("getting the jid from the tables")
-    old_db_jid_list = [a for a in old_database_cursor.execute("SELECT * FROM jid")]
-    new_db_jid_list = [a for a in new_database_cursor.execute("SELECT * FROM jid")]
-
-    jid_sql = "INSERT INTO jid VALUES (?, ?, ?, ?, ?, ?, ?);"
-
-    last_jid_id = int(old_database_connection.execute
-                      ("SELECT * FROM jid ORDER BY _id DESC LIMIT 1").fetchone()[0])
-
-    jid_users = []
-    for u in old_db_jid_list:
-        params = (u[0], u[1], u[2], u[3], u[4], u[5], u[6])
-        merged_database_cursor.execute(jid_sql, params)
-        jid_users.append(u[1])
-        print("inserted")
-    for u in new_db_jid_list:
-        if u[1] in jid_users:
-            print("duplicate entry, skipping...")
+    for trigger in triggers:
+        if trigger in added_triggers:
             continue
-        new_id = last_jid_id + int(u[0])
-        params = (new_id, u[1], u[3], u[4], u[5], u[6], u[7])
-        merged_database_cursor.execute(jid_sql, params)
-        print("inserted")
-    print("merged jid table")
+        print("\n" + trigger + "\n")
+        sql_create_trigger_function = new_database_cursor.execute(
+            f"SELECT sql FROM sqlite_master WHERE name = '{trigger}' AND type = 'trigger'").fetchone()[0]
+        merged_database_cursor.execute(sql_create_trigger_function)
+        added_triggers.append(trigger)
+        merged_database_connection.commit()
 
-    # merge chat_view
-
-    print("making the chat_view view")
-
-    merged_database_cursor.execute("CREATE VIEW chat_view AS SELECT chat._id AS _id, jid.raw_string AS "
-                                   "raw_string_jid, hidden AS hidden, subject AS subject, created_timestamp AS "
-                                   "created_timestamp, display_message_row_id AS display_message_row_id, "
-                                   "last_message_row_id AS last_message_row_id, last_read_message_row_id AS "
-                                   "last_read_message_row_id, last_read_receipt_sent_message_row_id AS "
-                                   "last_read_receipt_sent_message_row_id, last_important_message_row_id AS "
-                                   "last_important_message_row_id, archived AS archived, sort_timestamp AS "
-                                   "sort_timestamp, mod_tag AS mod_tag, gen AS gen, spam_detection AS spam_detection, "
-                                   "unseen_earliest_message_received_time AS unseen_earliest_message_received_time, "
-                                   "unseen_message_count AS unseen_message_count, unseen_missed_calls_count AS "
-                                   "unseen_missed_calls_count, unseen_row_count AS unseen_row_count, "
-                                   "unseen_message_reaction_count AS unseen_message_reaction_count, "
-                                   "last_message_reaction_row_id AS last_message_reaction_row_id, "
-                                   "last_seen_message_reaction_row_id AS last_seen_message_reaction_row_id, "
-                                   "plaintext_disabled AS plaintext_disabled, vcard_ui_dismissed AS "
-                                   "vcard_ui_dismissed, change_number_notified_message_row_id AS "
-                                   "change_number_notified_message_row_id, show_group_description AS "
-                                   "show_group_description, ephemeral_expiration AS ephemeral_expiration, "
-                                   "last_read_ephemeral_message_row_id AS last_read_ephemeral_message_row_id, "
-                                   "ephemeral_setting_timestamp AS ephemeral_setting_timestamp, "
-                                   "ephemeral_displayed_exemptions AS ephemeral_displayed_exemptions, "
-                                   "ephemeral_disappearing_messages_initiator AS "
-                                   "ephemeral_disappearing_messages_initiator, unseen_important_message_count AS "
-                                   "unseen_important_message_count, group_type AS group_type, growth_lock_level AS "
-                                   "growth_lock_level, growth_lock_expiration_ts AS growth_lock_expiration_ts, "
-                                   "last_read_message_sort_id AS last_read_message_sort_id, display_message_sort_id "
-                                   "AS display_message_sort_id, last_message_sort_id AS last_message_sort_id, "
-                                   "last_read_receipt_sent_message_sort_id AS last_read_receipt_sent_message_sort_id, "
-                                   "has_new_community_admin_dialog_been_acknowledged AS "
-                                   "has_new_community_admin_dialog_been_acknowledged, history_sync_progress AS "
-                                   "history_sync_progress, chat_lock AS chat_lock FROM chat chat LEFT JOIN jid jid ON "
-                                   "chat.jid_row_id = jid._id")
-
-    print("chat_view creation complete")
-
-    # deleted_chat_job
-
-    merged_database_cursor.execute("CREATE TABLE deleted_chat_job(_id INTEGER PRIMARY KEY AUTOINCREMENT, chat_row_id "
-                                   "INTEGER NOT NULL, block_size INTEGER, singular_message_delete_rows_id TEXT, "
-                                   "deleted_message_row_id  INTEGER, deleted_starred_message_row_id  INTEGER, "
-                                   "deleted_messages_remove_files BOOLEAN, deleted_categories_message_row_id INTEGER, "
-                                   "deleted_categories_starred_message_row_id INTEGER, "
-                                   "deleted_categories_remove_files BOOLEAN, deleted_message_categories TEXT, "
-                                   "delete_files_singular_delete BOOLEAN)")
-
-    old_db_dcj = [a for a in old_database_cursor.execute("SELECT * FROM deleted_chat_job")]
-    new_db_dcj = [a for a in new_database_cursor.execute("SELECT * FROM deleted_chat_job")]
-
-    dcj_sql = "INSERT INTO deleted_chat_job VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);"
-
-    dcj_ids = []
-
-    for d in old_db_dcj:
-        if not d:
-            break
-        params = (d[0], d[1], d[2], d[3], d[4], d[5], d[6], d[7], d[8], d[9], d[10], d[11])
-        merged_database_cursor.execute(dcj_sql, params)
-        dcj_ids.append(d[0])
-        print("inserted")
-    for d in new_db_dcj:
-        if not d:
-            break
-        new_id = len(dcj_ids) + d[0]
-        params = (new_id, d[1], d[2], d[3], d[4], d[5], d[6], d[7], d[8], d[9], d[10], d[11])
-        merged_database_cursor.execute(dcj_sql, params)
-        print("inserted")
-    print("merged deleted_chat_job")
-
-    # message_ephemeral
-
-    merged_database_cursor.execute("CREATE TABLE message_ephemeral(message_row_id INTEGER PRIMARY KEY,duration "
-                                   "INTEGER NOT NULL,expire_timestamp INTEGER NOT NULL,keep_in_chat INTEGER NOT NULL "
-                                   "DEFAULT 0)")
-
-    old_db_me = [a for a in old_database_cursor.execute("SELECT * FROM message_ephemeral")]
-    new_db_me = [a for a in new_database_cursor.execute("SELECT * FROM message_ephemeral")]
-
-    me_sql = "INSERT INTO message_ephemeral VALUES (?, ?, ?, ?);"
-
-    me_ids = []
-    for e in old_db_me:
-        if not e:
-            break
-        params = (e[0], e[1], e[2], e[3])
-        merged_database_cursor.execute(me_sql, params)
-        me_ids.append(e[0])
-        print("inserted")
-    for e in new_db_me:
-        if not e:
-            break
-        if e[0] in me_ids:
-            print("duplicate")
-            continue
-        params = (e[0], e[1], e[2], e[3])
-        merged_database_cursor.execute(me_sql, params)
-        print("inserted")
-    print("merged message_ephemeral")
-
-    # available_message_view
-
-    print("making the available_message_view view")
-
-    merged_database_cursor.execute("CREATE VIEW available_message_view AS  SELECT message._id AS _id, message.sort_id "
-                                   "AS sort_id, message.chat_row_id AS chat_row_id, from_me, key_id, "
-                                   "sender_jid_row_id, NULL AS sender_jid_raw_string, status, broadcast, "
-                                   "recipient_count, participant_hash, origination_flags, origin, timestamp, "
-                                   "received_timestamp, receipt_server_timestamp, message_type, text_data, starred, "
-                                   "lookup_tables, message_add_on_flags, NULL AS data, NULL AS media_url, "
-                                   "NULL AS media_mime_type, NULL AS media_size, NULL AS media_name, "
-                                   "NULL AS media_caption, NULL AS media_hash, NULL AS media_duration, "
-                                   "NULL AS latitude, NULL AS longitude, NULL AS thumb_image, NULL AS raw_data, "
-                                   "NULL AS quoted_row_id, NULL AS mentioned_jids, NULL AS multicast_id, "
-                                   "NULL AS edit_version, NULL AS media_enc_hash, NULL AS payment_transaction_id, "
-                                   "NULL AS preview_type, NULL AS receipt_device_timestamp, "
-                                   "NULL AS read_device_timestamp, NULL AS played_device_timestamp, "
-                                   "NULL AS future_message_type, 2 AS table_version, expire_timestamp, keep_in_chat "
-                                   "FROM message LEFT JOIN deleted_chat_job AS job ON job.chat_row_id = "
-                                   "message.chat_row_id LEFT JOIN message_ephemeral AS message_ephemeral ON "
-                                   "message._id = message_ephemeral.message_row_id WHERE  IFNULL(NOT((IFNULL("
-                                   "message.starred, 0) = 0 AND message.sort_id <= IFNULL(job.deleted_message_row_id, "
-                                   "-9223372036854775808)) OR (IFNULL(message.starred, 0) = 1 AND message.sort_id <= "
-                                   "IFNULL(job.deleted_starred_message_row_id, -9223372036854775808)) OR ( ("
-                                   "job.deleted_message_categories IS NOT NULL) AND (job.deleted_message_categories "
-                                   "LIKE '%"' || message.message_type || '"%') AND ((IFNULL(message.starred, "
-                                   "0) = 0 AND message.sort_id <= IFNULL(job.deleted_categories_message_row_id, "
-                                   "-9223372036854775808)) OR (IFNULL(message.starred, 0) = 1 AND message.sort_id <= "
-                                   "IFNULL(job.deleted_categories_starred_message_row_id, -9223372036854775808)))) OR "
-                                   "((job.singular_message_delete_rows_id IS NOT NULL) AND ("
-                                   "job.singular_message_delete_rows_id LIKE '%"' || message._id || '"%'))), 0)")
-
-    merged_database_connection.commit()
+    print("merged the data")
+    print("saving the file")
     merged_database_connection.close()
     old_database_connection.close()
     new_database_connection.close()
 
-    print("completed the merging process")
 
-except Exception as e:
-    print("We hit a wall...")
+except IndexError as e:
     print(e)
+    exit(1)

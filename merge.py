@@ -74,6 +74,10 @@ try:
     new_views = [a[0] for a in new_database_cursor.execute("SELECT name FROM sqlite_master WHERE type='view'")]
     new_triggers = [a[0] for a in new_database_cursor.execute("SELECT name FROM sqlite_master WHERE type='trigger'")]
 
+    tables = list(set(old_tables + new_tables))
+    views = list(set(old_views + new_views))
+    triggers = list(set(old_triggers + new_triggers))
+
     added_tables = []
     added_views = []
     added_triggers = []

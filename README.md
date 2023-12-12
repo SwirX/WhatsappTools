@@ -2,9 +2,9 @@
 simple way to decrypt and merge two whatsapp databases
 
 <h2>Decrypt a database</h2>
-```python decrypt.py <old_database> <new_database> <key_file>```
+```python decrypt.py \<old_database> \<new_database> \<key_file>```
 <h2>Merge two databases</h2>
-```python merge_saves.py <old_database> <new_database> <output_dir>?```
+```python merge_saves.py \<old_database> \<new_database> \<output_dir>?```
 
 ***
 <h1>TODO list</h1>

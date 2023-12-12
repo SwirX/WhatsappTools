@@ -33,23 +33,27 @@ def get_create_cmd(cursor: Cursor, name: str, _type: str = None) -> list:
         return [a[0] for a in cursor.execute(f"SELECT sql FROM sqlite_master WHERE name='{name}'")]
 
 
+def get_all(cursor: Cursor, _type: str = "table") -> list:
+    return [a for a in cursor.execute(f"SELECT name FROM sqlite_master WHERE type = '{_type}'")]
+
+
 def clean_db(cursor: Cursor) -> None:
     cursor.execute('PRAGMA foreign_keys=off')
+    t = get_all(cursor)
+    v = get_all(cursor, "views")
     print("Cleaning the database")
     print("Cleaning the views")
-    print("views: ", VIEWS)
-    if len(VIEWS) > 0:
-        for view in VIEWS:
+    print("views: ", v)
+    if len(v) > 0:
+        for view in v:
             cursor.execute(f"DROP VIEW {view} IF EXISTS")
     print(get_db_info(cursor, "view"))
-    print('tables: ', TABLES)
+    print('tables: ', t)
     print("Cleaning the tables")
-    for table in TABLES:
+    for table in t:
         # Check if the table is a virtual table (type='table') before deletion
         table_type = cursor.execute(f"SELECT type FROM sqlite_master WHERE name = ?", (table,)).fetchone()
         if table_type and table_type[0] == 'table':
-            if table == "message_ftsv2":
-                print(" the problem maker is here")
             print(table, table_type[0])
             cursor.execute(f'DELETE FROM "main".{table}')
         else:
@@ -62,12 +66,58 @@ def make_insert_cmd(table: str, entries_count: int) -> str:
     return f"INSERT INTO {table} VALUES (" + ("?, " * (entries_count - 1)) + "?);"
 
 
+def make_update_cmd(table: str, entries_count: int) -> str:
+    return f"UPDATE INTO {table} VALUES (" + ("?, " * (entries_count - 1)) + "?);"
+
+
 def get_table_entries(cursor: Cursor, table) -> list:
     return [a for a in cursor.execute(f"SELECT * FROM {table}")]
 
 
 def get_last_id(cursor: Cursor, table: str) -> int:
-    return int(cursor.execute(f"SELECT * from {table} ORDER BY _id DESC LIMIT 1").fetchone()[0]) or 0
+    try:
+        ret = int(cursor.execute(f"SELECT _id from {table} ORDER BY _id DESC LIMIT 1").fetchone()[0])
+        print(f"last id is {ret}")
+    except TypeError:
+        print("TypeError returning 0 and continuing")
+        ret = 0
+    return ret
+
+
+def get_last_entry(cursor: Cursor, table: str, column: str) -> int:
+    try:
+        ret = int(cursor.execute(f"SELECT {column} from {table} ORDER BY {column} DESC LIMIT 1").fetchone()[0])
+        print(f"last id is {ret}")
+    except TypeError:
+        print("TypeError returning 0 and continuing")
+        ret = 0
+    return ret
+
+
+def get_unique_column(cursor, table_name):
+    # Execute a query to retrieve column information for the specified table
+    cursor.execute(f"PRAGMA table_info({table_name})")
+
+    # Fetch all the rows from the result set
+    columns = cursor.fetchall()
+
+    # Check if there is a unique column in the result set
+    for column in columns:
+        if column[5] == 1:  # Check the 'unique' constraint (index 5 in PRAGMA table_info)
+            return column[1]  # Return the name of the unique column
+
+    return ""  # Return None if no unique column is found
+
+
+def check_id_exists(cursor: Cursor, table: str):
+    # Execute a query to retrieve column information for the specified table
+    cursor.execute(f"PRAGMA table_info({table})")
+
+    # Fetch all the rows from the result set
+    columns = cursor.fetchall()
+
+    # Check if the column with the specified name exists in the result set
+    return any(column[1] == "_id" for column in columns) or any("id" in column[1] for column in columns)
 
 
 def validate_args() -> tuple[str, tuple[str, str, str]]:
@@ -75,7 +125,8 @@ def validate_args() -> tuple[str, tuple[str, str, str]]:
     try:
         first, second, third = argv[1], argv[2], argv[3]
     except IndexError:
-        print("missing arguments\n -d [keyfile] [encrypted_database] [decrypted_file_path]\n -m [old_database] [new_database]")
+        print(
+            "missing arguments\n -d [keyfile] [encrypted_database] [decrypted_file_path]\n -m [old_database] [new_database]")
         exit(1)
     paths = second and third
     arefiles = isfile(second) and isfile(third)
@@ -137,47 +188,106 @@ def merge(old: str, new: str):
     global TABLES, VIEWS
     TABLES, VIEWS = get_db_info(old_cur, "table"), get_db_info(old_cur, "view")
     create_db(old)
-    out_con = connect(OUTPUT_FOLDER_PATH+NEW_DATABASE_NAME)[0]
+    out_con = connect(OUTPUT_FOLDER_PATH + NEW_DATABASE_NAME)[0]
     out_cur = out_con.cursor()
-    # clean_db(out_cur)
     for table in TABLES:
         print("table name: ", table)
         old_entries = get_table_entries(old_cur, table)
-        new_entries = get_table_entries(new_cur, table)
-        last_id = get_last_id(old_cur, table)
-        merged_entries = [e for e in old_entries]
-
-        for e in new_entries:
-            if not e or e is None:
-                break
-            if e in merged_entries:
-                continue
-            params = ()
+        id_exists = check_id_exists(old_cur, table)
+        unique_col = get_unique_column(old_cur, table)
+        if table not in [t[0] for t in get_all(new_cur)]:
+            continue
+        if id_exists is None:
+            raise
+        elif not id_exists or "hash" in unique_col:
+            print("the id column does not exist appending normally")
             try:
-                _id = 0
-                for oe in merged_entries:
-                    if e[0] in oe:
-                        _id = last_id + e[0]
-                    else:
-                        _id = e[0]
-                params += (_id,)
-                if type(e[1]) == int or type(e[1]) == tuple:
+                new_entries = get_table_entries(new_cur, table)
+            except:
+                print(f"{table} doesnt exist in the new table")
+                continue
+            merged_entries = [e for e in old_entries]
+            for entry in new_entries:
+                if not entry or entry is None:
+                    break
+                if entry in merged_entries:
+                    continue
+                cmd = make_insert_cmd(table, len(entry))
+                print(cmd, entry)
+                out_cur.execute(cmd, entry)
+        else:
+            new_entries = get_table_entries(new_cur, table)
+            merged_entries = [e for e in old_entries]
+            last_id = get_last_entry(old_cur, table, unique_col)
+            for entry in new_entries:
+                if (entry[0] in m_entry for m_entry in merged_entries) or (entry in merged_entries):
+                    continue
+                cmd = make_insert_cmd(table, len(entry))
+                print(cmd, entry)
+                out_cur.execute(cmd, entry)
+        try:
+            new_entries = get_table_entries(new_cur, table)
+            last_id = get_last_id(old_cur, table)
+            merged_entries = [e for e in old_entries]
+            if table == "props":
+                for entry in new_entries:
+                    cmd = make_update_cmd(table, len(entry))
+                    print(cmd, entry)
+                    out_cur.execute(cmd, entry)
+            elif table == "jid":
+                for entry in new_entries:
+                    cmd = make_update_cmd(table, len(entry))
+                    print(cmd, entry)
+                    out_cur.execute(cmd, entry)
+
+            added_ids = []
+            entry: tuple
+            for entry in new_entries:
+                if not entry or entry is None:
+                    break
+                if entry in merged_entries:
+                    continue
+                params = ()
+                try:
+                    _id = entry[0]
+                    if _id in added_ids:
+                        last_id *= 2
+                        last_id -= 1
+                    if entry[0] <= last_id != 0:
+                        print(f"{table} entry w/ id {entry[0]} is alr present")
+                        print(f"appending the id w/ {last_id}")
+                        _id += last_id
+                        added_ids.append(_id)
+                        print(f"the new id is now {_id}")
+                    # else:
+                    #    print(f"The id {entry[0]} is not a duplicate")
+                    #    _id = entry[0]
                     params += (_id,)
-                    for i in range(2, len(e)):
-                        params += (e[i],)
-                else:
-                    for i in range(1, len(e)):
-                        params += (e[i],)
-            except Exception as e:
-                print(e)
-            finally:
-                cmd = make_insert_cmd(table, len(e))
-                print(cmd, params)
-                out_cur.execute(cmd, params)
+                    if type(entry[1]) == int or type(entry[1]) == tuple:
+                        params += (_id,)
+                        for i in range(2, len(entry)):
+                            params += (entry[i],)
+                    else:
+                        for i in range(1, len(entry)):
+                            params += (entry[i],)
+                except Exception as e:
+                    print(e)
+                finally:
+                    cmd = make_insert_cmd(table, len(entry))
+                    print(cmd, params)
+                    out_cur.execute(cmd, params)
+            print(f"merged {table}")
+            print("next")
+        except sqlite3.OperationalError as e:
+            print("Table not found on the new database skipping...")
+            continue
 
     for view in VIEWS:
         print("view name: ", view)
-        out_cur.execute(get_create_cmd(new_cur, view, "view")[0])
+        try:
+            out_cur.execute(get_create_cmd(new_cur, view, "view")[0])
+        except:
+            continue
 
     print("merging ended")
     print("committing changes")
@@ -206,5 +316,6 @@ if __name__ == "__main__":
         print("cleaning the residuals and closing the connections")
         for con in DB_CONNECTIONS:
             con.close()
-        os.system("rm ./output/msgstore.db")
+        os.system(f"rm ./{OUTPUT_FOLDER_PATH}{NEW_DATABASE_NAME}")
+        print(f"executed rm ./{OUTPUT_FOLDER_PATH}{NEW_DATABASE_NAME}")
         raise

@@ -1,4 +1,5 @@
 import os
+import re
 import shutil
 from os.path import isfile, abspath, exists, isdir, samefile
 from sys import argv
@@ -94,27 +95,35 @@ def get_last_entry(cursor: Cursor, table: str, column: str) -> int:
     return ret
 
 
-def get_unique_column(cursor, table_name):
-    # Execute a query to retrieve column information for the specified table
-    cursor.execute(f"PRAGMA table_info({table_name})")
-
-    # Fetch all the rows from the result set
-    columns = cursor.fetchall()
-
-    # Check if there is a unique column in the result set
-    for column in columns:
-        if column[5] == 1:  # Check the 'unique' constraint (index 5 in PRAGMA table_info)
-            return column[1]  # Return the name of the unique column
-
-    return ""  # Return None if no unique column is found
+def get_unique_column(cursor: Cursor, table_name: str):
+    res = None
+    try:
+        tb = cursor.execute(f"SELECT sql FROM sqlite_master WHERE type == 'table' AND name == '{table_name}' ORDER BY sql ASC").fetchone()[0]
+        #print(tb)
+        # search01 = re.search(r"(\w*)\s?\(.*,\s?(\w*)\s\w*\s(\w*)[\w\s,]*?.*\)", tb)
+        # print("completed search 1")
+        # print(search01.groups())
+        search02 = re.search(r"\((.*)\)", tb)
+        #print("completed search phase")
+        #print("got the results:")
+        columns = search02[1].split(",")
+        #print("split the columns")
+        for i in range(0, len(columns)):
+            if "unique" in columns[i].lower():
+                column = re.search(r"(\w*) \w* UNIQUE", columns[i]).groups()[0]
+                res = (column, i)
+        #print("got the final results with the index")
+    except Exception as e:
+        con.close()
+        #print("got an error closing the connection")
+        raise e
+    finally:
+        return res
 
 
 def check_id_exists(cursor: Cursor, table: str):
-    # Execute a query to retrieve column information for the specified table
-    cursor.execute(f"PRAGMA table_info({table})")
-
     # Fetch all the rows from the result set
-    columns = cursor.fetchall()
+    columns = cursor.execute(f"PRAGMA table_info({table})").fetchall()
 
     # Check if the column with the specified name exists in the result set
     return any(column[1] == "_id" for column in columns) or any("id" in column[1] for column in columns)
@@ -198,9 +207,12 @@ def merge(old: str, new: str):
         if table not in [t[0] for t in get_all(new_cur)]:
             continue
         if id_exists is None:
+            print("id is none")
             raise
-        elif not id_exists or "hash" in unique_col:
+        elif not id_exists and unique_col is not None:
+            print("found a unique col")
             print("the id column does not exist appending normally")
+            unique_list = []
             try:
                 new_entries = get_table_entries(new_cur, table)
             except:
@@ -208,6 +220,10 @@ def merge(old: str, new: str):
                 continue
             merged_entries = [e for e in old_entries]
             for entry in new_entries:
+                if entry[unique_col[1]] in unique_list:
+                    print("an entry already exists with this unique value:")
+                    print(f"{unique_col[0]}: {entry[unique_col[1]]}")
+                    continue
                 if not entry or entry is None:
                     break
                 if entry in merged_entries:
@@ -215,16 +231,74 @@ def merge(old: str, new: str):
                 cmd = make_insert_cmd(table, len(entry))
                 print(cmd, entry)
                 out_cur.execute(cmd, entry)
-        else:
-            new_entries = get_table_entries(new_cur, table)
+                unique_list.append(entry[unique_col[1]])
+        elif id_exists and unique_col is not None:
+            print("found a unique col with _id")
+            print("the id column exists and so does the unique column")
+            last_id = get_last_id(old_cur, table)
+            unique_list = []
+            try:
+                new_entries = get_table_entries(new_cur, table)
+            except:
+                print(f"{table} doesnt exist in the new table")
+                continue
+
+            if table == "props" or table == "jid":
+                print(f"dealing with {table} table only updating values")
+                for entry in new_entries:
+                    cmd = make_update_cmd(table, len(entry))
+                    print(cmd, entry)
+                    out_cur.execute(cmd, entry)
+
             merged_entries = [e for e in old_entries]
-            last_id = get_last_entry(old_cur, table, unique_col)
+            added_ids = []
+            entry: tuple
             for entry in new_entries:
-                if (entry[0] in m_entry for m_entry in merged_entries) or (entry in merged_entries):
+                if not entry or entry is None:
+                    break
+                if entry in merged_entries:
                     continue
-                cmd = make_insert_cmd(table, len(entry))
-                print(cmd, entry)
-                out_cur.execute(cmd, entry)
+                params = ()
+                try:
+                    _id = entry[0]
+                    if _id in added_ids:
+                        last_id *= 2
+                        last_id -= 1
+                    if entry[0] <= last_id != 0:
+                        print(f"{table} entry w/ id {entry[0]} is alr present")
+                        print(f"appending the id w/ {last_id}")
+                        _id += last_id
+                        added_ids.append(_id)
+                        print(f"the new id is now {_id}")
+                    # else:
+                    #    print(f"The id {entry[0]} is not a duplicate")
+                    #    _id = entry[0]
+                    params += (_id,)
+                    if type(entry[1]) == int or type(entry[1]) == tuple:
+                        params += (_id,)
+                        for i in range(2, len(entry)):
+                            params += (entry[i],)
+                    else:
+                        for i in range(1, len(entry)):
+                            params += (entry[i],)
+                except Exception as e:
+                    print(e)
+                finally:
+                    cmd = make_insert_cmd(table, len(entry))
+                    print(cmd, params)
+                    out_cur.execute(cmd, params)
+            print(f"merged {table}")
+            print("next")
+        # else:
+        #     new_entries = get_table_entries(new_cur, table)
+        #     merged_entries = [e for e in old_entries]
+        #     last_id = get_last_entry(old_cur, table, unique_col[0])
+        #     for entry in new_entries:
+        #         if (entry[0] in m_entry for m_entry in merged_entries) or (entry in merged_entries):
+        #             continue
+        #         cmd = make_insert_cmd(table, len(entry))
+        #         print(cmd, entry)
+        #         out_cur.execute(cmd, entry)
         try:
             new_entries = get_table_entries(new_cur, table)
             last_id = get_last_id(old_cur, table)
